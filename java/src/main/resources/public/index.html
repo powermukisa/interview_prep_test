@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Coding Challenge</title>
+  </head>
+  <body class="bg-slate-900">
+    <div class="space-y-6 bg-slate-900 text-white mx-12">
+      <form
+        id="calculate-amounts"
+        action="http://localhost:8080/amounts"
+        method="post"
+      >
+        <div class="border-b pt-6 pb-8">
+          <h2 class="text-base font-semibold leading-7">Coding Challenge</h2>
+          <div class="mt-6 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+            <div class="sm:col-span-4">
+              <label
+                for="amount"
+                class="block text-sm font-medium leading-6 text-gray"
+                >Total Amount</label
+              >
+              <div class="mt-2">
+                <div
+                  class="flex rounded-md shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-inset focus-within:ring-indigo-600 sm:max-w-md"
+                >
+                  <div
+                    class="text-sm bg-gray-800 pt-2 px-2 border rounded-l pointer-events-none"
+                  >
+                    USD
+                  </div>
+                  <input
+                    required
+                    type="number"
+                    name="amount"
+                    min="0"
+                    id="amount"
+                    class="block flex-1 border-0 bg-transparent py-1.5 pl-4 text-gray placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    placeholder="Enter a decimal number"
+                  />
+                </div>
+              </div>
+              <div>
+                <button
+                  type="submit"
+                  id="submit"
+                  class="rounded-md m bg-white mt-4 px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                >
+                  Calculate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+      <div>
+        <h3>Results</h3>
+        <div
+          id="result"
+          class="block flex-1 border-0 bg-transparent py-1.5 pl-4 text-gray placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
+        >
+          Results will appear here
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.querySelector("#calculate-amounts");
+      const url = form.getAttribute("action");
+      const resultEl = document.querySelector("#result");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const body = {
+          amount: {
+            value: document.querySelector("#amount").value,
+            currency: "USD",
+          },
+        };
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: {
+              "Content-Type": "application/json; charset=utf-8",
+            },
+          });
+          resultEl.textContent = JSON.stringify(await response.json(), null, 4);
+        } catch (error) {
+          alert(JSON.stringify(error));
+        }
+      });
+    </script>
+  </body>
+</html>

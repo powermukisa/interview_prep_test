@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: accounting
+  jackson:
+    serialization:
+      FAIL_ON_EMPTY_BEANS: false
+  flyway:
+    enabled: false
