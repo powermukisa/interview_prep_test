@@ -1,13 +1,35 @@
 # Rillet Revenue Recognition - TDD Implementation Guide
 
-This guide provides a step-by-step walkthrough for implementing the revenue recognition solution following TDD best practices for the Rillet pair programming interview.
+This guide provides a step-by-step walkthrough for implementing the revenue recognition solution following TDD best practices, **Hexagonal Architecture**, and **Domain-Driven Design** principles for the Rillet pair programming interview.
+
+## 📚 Important Companion Guides
+
+**Before starting, review these architectural guides:**
+- **[ARCHITECTURE_AND_DDD_GUIDE.md](ARCHITECTURE_AND_DDD_GUIDE.md)** - Complete explanation of Hexagonal Architecture and DDD patterns used
+- **[MONEY_MODULE_EXPLAINED.md](MONEY_MODULE_EXPLAINED.md)** - Why `.withQuotedDecimalNumbers()` prevents precision loss
+
+## Architecture Overview
+
+We follow **Hexagonal Architecture (Ports & Adapters)**:
+```
+Infrastructure (Web, DTOs) → Application (Use Cases) → Domain (Business Logic)
+```
+
+Key principles:
+- ✅ Domain has NO dependencies on infrastructure
+- ✅ Use ubiquitous language from revenue recognition domain
+- ✅ Value Objects are immutable and self-validating
+- ✅ Aggregate Root (RevenueAllocation) maintains invariants
+- ✅ Domain Services contain pure business logic
+- ✅ Application Services orchestrate use cases
+- ✅ Adapters translate between layers
 
 ## Table of Contents
 1. [Phase 0: Setup Verification](#phase-0-setup-verification)
-2. [Phase 1: Domain Modeling](#phase-1-domain-modeling)
-3. [Phase 2: Core Algorithm (TDD Cycles)](#phase-2-core-algorithm-tdd-cycles)
-4. [Phase 3: Edge Cases & Validation](#phase-3-edge-cases--validation)
-5. [Phase 4: API & DTO Layer](#phase-4-api--dto-layer)
+2. [Phase 1: Domain Layer (Pure Business Logic)](#phase-1-domain-layer-pure-business-logic)
+3. [Phase 2: Application Layer (Use Cases & Ports)](#phase-2-application-layer-use-cases--ports)
+4. [Phase 3: Domain Service Implementation (TDD)](#phase-3-domain-service-implementation-tdd)
+5. [Phase 4: Infrastructure Layer (Adapters)](#phase-4-infrastructure-layer-adapters)
 6. [Phase 5: UI Enhancement](#phase-5-ui-enhancement)
 7. [Phase 6: Final Polish](#phase-6-final-polish)
 
