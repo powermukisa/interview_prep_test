@@ -380,16 +380,25 @@ public record MonthlyAllocation(
 
 #### 💬 What to Say
 
-> "Now I'll create the RevenueAllocation aggregate root. This is the consistency boundary for our allocation operation. Its key responsibility is enforcing the invariant that all monthly amounts sum to exactly the annual amount - no rounding errors allowed. By making the constructor package-private, we ensure it can only be created by our domain service, which guarantees the invariant."
+> "Now I'll create the RevenueAllocation aggregate root. This is the consistency boundary for our allocation operation. Its key responsibility is enforcing the invariant that all monthly amounts sum to exactly the annual amount - no rounding errors allowed. I'm making the record public so other layers can use it, but the constructor is package-private - only the domain service can create it. This ensures the invariant is always validated during creation, while still allowing other layers to read the data."
 
 ### Step 2.1: RevenueAllocation Aggregate
 
 #### 🎯 Reasoning
 
-**Why package-private constructor?**
-- Only domain service can create it
-- Prevents invalid aggregates from being created
-- Enforces that invariants are always checked
+**Why PUBLIC record with PACKAGE-PRIVATE constructor?**
+- **Record is public**: Application and infrastructure layers can USE it (read data)
+- **Constructor is package-private**: Only domain service can CREATE it
+- This separates concerns: reading vs creating
+- Enforces that only domain service creates aggregates (which validates invariants)
+
+**Key insight:**
+```java
+public record RevenueAllocation(...)     // ← PUBLIC: everyone can use
+    RevenueAllocation { ... }            // ← PACKAGE-PRIVATE: only domain can create
+```
+
+Record visibility ≠ Constructor visibility!
 
 **Why validate sum in constructor?**
 - Fail fast if invariant is violated
@@ -398,10 +407,12 @@ public record MonthlyAllocation(
 
 #### ✅ Benefits
 
-- Business rule enforcement
-- Impossible to have sum != annual
-- Clear ownership (calculator creates it)
-- Testable invariants
+- **Controlled Access**: Public for reading, package-private for creation
+- **Business rule enforcement**: Invariant always validated
+- **Impossible to have sum != annual**: Enforced at construction
+- **Clear ownership**: Calculator creates it, others just use it
+- **Less boilerplate**: Record generates accessors automatically
+- **Testable invariants**: Constructor validation catches bugs early
 
 #### 📝 Code
 
@@ -423,28 +434,27 @@ import java.util.Objects;
  * 
  * DESIGN DECISIONS:
  * 
- * 1. Record type:
+ * 1. Public record + package-private constructor:
+ *    - Record is PUBLIC: Other layers can use it (read data)
+ *    - Constructor is PACKAGE-PRIVATE: Only domain service can create it
+ *    - This gives controlled access: readable everywhere, creatable only in domain
+ * 
+ * 2. Record type:
  *    - Immutable by default
  *    - Less boilerplate than class
- *    - Still supports package-private constructor
- *    - Still supports validation
+ *    - Automatic accessor methods (no "get" prefix)
  * 
- * 2. Naming: annualAmount vs amount
+ * 3. Naming: annualAmount vs amount
  *    - We use "annualAmount" here (not just "amount") because this aggregate
  *      contains BOTH the annual total AND monthly amounts
  *    - Being explicit prevents confusion
- * 
- * 3. Package-private constructor:
- *    - Only the domain service (AllocationCalculator) can create this
- *    - Ensures invariants are always maintained
- *    - Prevents invalid aggregates from existing
  * 
  * 4. Validates sum in constructor:
  *    - Fail fast if invariant is violated
  *    - Impossible to have invalid state
  *    - Makes bugs unrepresentable
  */
-record RevenueAllocation(
+public record RevenueAllocation(
     MonetaryAmount annualAmount,
     List<MonthlyAllocation> monthlyAllocations,
     MonetaryAmount baseMonthlyAmount,
@@ -455,10 +465,24 @@ record RevenueAllocation(
      * Compact constructor with validation and defensive copying.
      * Package-private (no modifier) - only accessible within domain package.
      * 
-     * WHY PACKAGE-PRIVATE:
+     * WHY PACKAGE-PRIVATE CONSTRUCTOR:
      * This is intentional! We don't want clients creating this directly.
      * Only AllocationCalculator (same package) can create this, ensuring
      * the allocation logic and invariant validation always happen together.
+     * 
+     * IMPORTANT: The RECORD is public, but the CONSTRUCTOR is package-private!
+     * 
+     * This means:
+     * ✅ Other packages can USE it: allocation.annualAmount()
+     * ❌ Other packages can't CREATE it: new RevenueAllocation(...)
+     * 
+     * Example:
+     * // In AllocationCalculator (same package):
+     * return new RevenueAllocation(...);  // ✅ ALLOWED
+     * 
+     * // In AmountsController (different package):
+     * allocation.annualAmount();          // ✅ ALLOWED - can read
+     * new RevenueAllocation(...);         // ❌ ERROR - can't create
      * 
      * This is a key DDD pattern - the aggregate root controls its own consistency.
      */
@@ -508,11 +532,14 @@ record RevenueAllocation(
 
 #### 🏛️ Architecture Notes
 
-- **Aggregate Root Pattern** - Consistency boundary
-- **Package-Private Constructor** - Controlled creation
-- **Invariant Enforcement** - Sum validation
-- **Immutability** - Defensive copying, List.copyOf()
-- **Domain Queries** - Methods express domain concepts
+- **Aggregate Root Pattern** - Consistency boundary for allocation
+- **Two-Level Access Control**:
+  - Public record → Other layers can read it
+  - Package-private constructor → Only domain can create it
+- **Invariant Enforcement** - Sum validation in constructor
+- **Immutability** - Defensive copying with `List.copyOf()`
+- **Record Benefits** - Auto-generated accessors (no "get" prefix)
+- **DDD Pattern** - Aggregate controls its own consistency
 
 ---
 
