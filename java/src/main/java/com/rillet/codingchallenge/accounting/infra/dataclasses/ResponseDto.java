@@ -1,10 +1,29 @@
 package com.rillet.codingchallenge.accounting.infra.dataclasses;
 
-public record ResponseDto() {
-    //TODO: To be defined
+import com.rillet.codingchallenge.accounting.domain.MonthlyAllocation;
+import com.rillet.codingchallenge.accounting.domain.RevenueAllocation;
 
-    public static ResponseDto from(Object result) {
-        //TODO: Map result to a response
-        return new ResponseDto();
+import javax.money.MonetaryAmount;
+import java.util.List;
+import java.util.stream.Collectors;
+
+public record ResponseDto(
+        List<MonthlyAllocation> allocations,
+        MonetaryAmount baseMonthlyAmount,
+        MonetaryAmount remainder,
+        MonetaryAmount total
+) {
+    public record MonthlyAmountDto(
+            String month,
+            MonetaryAmount amount
+    ) {}
+
+    public static ResponseDto fromDomain(RevenueAllocation allocation) {
+        return new ResponseDto(
+                allocation.monthlyAllocations(),    // Pass through directly!
+                allocation.baseMonthlyAmount(),
+                allocation.roundingAdjustment(),
+                allocation.annualAmount()
+        );
     }
 }

@@ -78,6 +78,7 @@
             value: document.querySelector("#amount").value,
             currency: "USD",
           },
+            roundingPlacement: "LAST"
         };
         try {
           const response = await fetch(url, {
