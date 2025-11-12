@@ -288,25 +288,26 @@ public record RevenueRecognitionRequest(
 
 **Why this value object?**
 - Represents one month's allocated revenue
-- Encapsulates amount + metadata (month, adjustment flag)
+- Simple structure: just month and amount
 - Immutable - once created, can't be changed
-- Rich model - has behavior (getters, factory methods)
+- Minimal - contains only what's essential
 
-**Why include `hasRoundingAdjustment` flag?**
-- UI needs to highlight which month got the extra pennies
-- Makes the model explicit about where adjustment went
-- Avoids calculations to figure out which month is different
+**Why not include extra flags?**
+- Start simple - we can always add more later
+- UI can figure out which month is adjusted by comparing amounts
+- Less complexity = fewer bugs
+- YAGNI principle (You Aren't Gonna Need It... yet)
 
 #### ✅ Benefits
 
-- Self-contained representation of one period
-- Factory methods express intent clearly
+- Simple, clear structure
 - Type-safe (uses Month enum, not strings)
-- UI can easily identify adjusted month
+- Easy to understand
+- Minimal surface area for bugs
 
 #### 💬 What to Say
 
-> "MonthlyAllocation is another value object - it represents the revenue recognized in a single period. I'm including a flag for whether this month received the rounding adjustment, which makes it explicit and easier for the UI to highlight. The factory methods `standard()` and `adjusted()` make the code more readable when creating these objects."
+> "MonthlyAllocation is another value object - it represents the revenue recognized in a single period. I'm keeping it simple: just the month and the amount. We can always add more fields later if we need them, but right now this is all we need to return the allocation data."
 
 #### 📝 Code
 
@@ -327,16 +328,15 @@ import java.util.Objects;
  * one period's allocation.
  * 
  * DESIGN DECISIONS:
+ * - Simple structure: Just month and amount
  * - Uses java.time.Month: Type-safe, prevents invalid months
- * - hasRoundingAdjustment flag: Makes it explicit which month got the extra pennies
- * - Factory methods: Express intent (standard vs adjusted) clearly
+ * - No adjustment flag: Keep it simple, UI can compare amounts if needed
  * 
  * Immutable - equality is based on value, not identity.
  */
 public record MonthlyAllocation(
-    Month recognitionPeriod,
-    MonetaryAmount recognizedAmount,
-    boolean hasRoundingAdjustment
+    Month month,
+    MonetaryAmount amount
 ) {
     /**
      * Compact constructor with validation
@@ -344,37 +344,24 @@ public record MonthlyAllocation(
      * WHY: Ensures this value object can never be in an invalid state.
      */
     public MonthlyAllocation {
-        Objects.requireNonNull(recognitionPeriod, "Recognition period cannot be null");
-        Objects.requireNonNull(recognizedAmount, "Recognized amount cannot be null");
+        Objects.requireNonNull(month, "Month cannot be null");
+        Objects.requireNonNull(amount, "Amount cannot be null");
         
-        if (recognizedAmount.isNegative()) {
+        if (amount.isNegative()) {
             throw new IllegalArgumentException(
-                "Recognized amount cannot be negative: " + recognizedAmount
+                "Amount cannot be negative: " + amount
             );
         }
     }
-    
-    /**
-     * Returns formatted period name for reporting
-     * 
-     * WHY: Encapsulates the formatting logic. If we want to change how months
-     * are displayed, we change it here, not scattered throughout the codebase.
-     */
-    public String periodName() {
-        return recognitionPeriod.name();
-    }
-    
-    // NOTE: We could add factory methods like standard() and adjusted() later
-    // if we find repetitive code. Start simple, refactor when needed!
 }
 ```
 
 #### 🏛️ Architecture Notes
 
-- **Rich Domain Model** - Not anemic (has behavior, not just getters)
-- **Factory Methods** - Express intent, improve readability
-- **Encapsulation** - Formatting logic lives with the data
+- **Value Object** - Immutable, validated, simple structure
 - **Type Safety** - Uses `Month` enum, not strings or integers
+- **Start Simple** - Just what's needed, can enhance later
+- **Domain Concept** - Represents a business idea, not just data
 
 ---
 
@@ -498,7 +485,7 @@ public class RevenueAllocation {
         // This is THE critical business rule for revenue recognition.
         // If this fails, we have a bug in the allocation logic.
         MonetaryAmount sum = monthlyAllocations.stream()
-            .map(MonthlyAllocation::recognizedAmount)
+            .map(MonthlyAllocation::amount)
             .reduce(MonetaryAmount::add)
             .orElseThrow(() -> new IllegalStateException("Failed to calculate sum"));
         
@@ -546,33 +533,8 @@ public class RevenueAllocation {
         return placement;
     }
     
-    /**
-     * Domain query: Is this a perfect even allocation?
-     * 
-     * WHY A METHOD: This is domain logic. Rather than forcing callers to
-     * check if roundingAdjustment.isZero(), we express the domain concept
-     * clearly with a well-named method.
-     * 
-     * This is "Tell, Don't Ask" - we ask the aggregate about its state
-     * rather than pulling data out and analyzing it.
-     */
-    public boolean isPerfectAllocation() {
-        return roundingAdjustment.isZero();
-    }
-    
-    /**
-     * Domain query: Get the adjusted month (if any)
-     * 
-     * WHY USEFUL: UI needs to highlight which month got the adjustment.
-     * Rather than making the UI search through the list, we provide
-     * this convenience method.
-     */
-    public MonthlyAllocation getAdjustedAllocation() {
-        return monthlyAllocations.stream()
-            .filter(MonthlyAllocation::hasRoundingAdjustment)
-            .findFirst()
-            .orElse(null);
-    }
+    // NOTE: We could add domain query methods like isPerfectAllocation() later
+    // if we find them useful. Start simple!
 }
 ```
 
@@ -682,17 +644,20 @@ class AllocationCalculatorTest {
         // Then: All 12 months get exactly $100
         assertThat(allocation.getMonthlyAllocations())
             .hasSize(12)
-            .allMatch(month -> month.recognizedAmount().isEqualTo(dollars(100)));
-        
-        // And: It's a perfect allocation (no rounding adjustment)
-        assertThat(allocation.isPerfectAllocation()).isTrue();
-        assertThat(allocation.getRoundingAdjustment()).isEqualTo(dollars(0));
+            .allMatch(monthAlloc -> monthAlloc.amount().isEqualTo(dollars(100)));
         
         // And: Base amount is $100
         assertThat(allocation.getBaseMonthlyAmount()).isEqualTo(dollars(100));
         
-        // And: Total equals original (invariant)
+        // And: No rounding adjustment needed
+        assertThat(allocation.getRoundingAdjustment()).isEqualTo(dollars(0));
+        
+        // And: Total equals original (invariant checked by aggregate)
         assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1200));
+        
+        // And: First month is JANUARY, last is DECEMBER
+        assertThat(allocation.getMonthlyAllocations().get(0).month()).isEqualTo(Month.JANUARY);
+        assertThat(allocation.getMonthlyAllocations().get(11).month()).isEqualTo(Month.DECEMBER);
     }
 }
 ```
@@ -872,11 +837,11 @@ public class AllocationCalculator {
         
         for (int i = 0; i < MONTHS_IN_YEAR; i++) {
             if (i == adjustmentIndex) {
-                // This month gets the adjustment
-                allocations.add(new MonthlyAllocation(months[i], adjustedAmount, true));
+                // This month gets the adjusted amount
+                allocations.add(new MonthlyAllocation(months[i], adjustedAmount));
             } else {
-                // Standard month
-                allocations.add(new MonthlyAllocation(months[i], baseAmount, false));
+                // Standard month gets base amount
+                allocations.add(new MonthlyAllocation(months[i], baseAmount));
             }
         }
         
@@ -935,16 +900,14 @@ Add these tests to `AllocationCalculatorTest.java`:
         
         // And: First 11 months have the base amount ($83.33)
         for (int i = 0; i < 11; i++) {
-            MonthlyAllocation month = allocation.getMonthlyAllocations().get(i);
-            assertThat(month.recognizedAmount()).isEqualTo(dollars(83.33));
-            assertThat(month.hasRoundingAdjustment()).isFalse();
+            MonthlyAllocation monthAlloc = allocation.getMonthlyAllocations().get(i);
+            assertThat(monthAlloc.amount()).isEqualTo(dollars(83.33));
         }
         
         // And: Last month (December) has the adjusted amount ($83.37)
         MonthlyAllocation lastMonth = allocation.getMonthlyAllocations().get(11);
-        assertThat(lastMonth.recognizedAmount()).isEqualTo(dollars(83.37));
-        assertThat(lastMonth.hasRoundingAdjustment()).isTrue();
-        assertThat(lastMonth.recognitionPeriod()).isEqualTo(Month.DECEMBER);
+        assertThat(lastMonth.amount()).isEqualTo(dollars(83.37));
+        assertThat(lastMonth.month()).isEqualTo(Month.DECEMBER);
         
         // And: Base amount is $83.33
         assertThat(allocation.getBaseMonthlyAmount()).isEqualTo(dollars(83.33));
@@ -952,10 +915,7 @@ Add these tests to `AllocationCalculatorTest.java`:
         // And: Rounding adjustment is $0.04
         assertThat(allocation.getRoundingAdjustment()).isEqualTo(dollars(0.04));
         
-        // And: NOT a perfect allocation
-        assertThat(allocation.isPerfectAllocation()).isFalse();
-        
-        // And: CRITICAL - Sum equals original (no penny lost!)
+        // And: CRITICAL - Sum equals original (aggregate validates this!)
         assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1000));
     }
     
@@ -982,15 +942,13 @@ Add these tests to `AllocationCalculatorTest.java`:
         
         // Then: First month (January) has the adjusted amount
         MonthlyAllocation firstMonth = allocation.getMonthlyAllocations().get(0);
-        assertThat(firstMonth.recognizedAmount()).isEqualTo(dollars(83.37));
-        assertThat(firstMonth.hasRoundingAdjustment()).isTrue();
-        assertThat(firstMonth.recognitionPeriod()).isEqualTo(Month.JANUARY);
+        assertThat(firstMonth.amount()).isEqualTo(dollars(83.37));
+        assertThat(firstMonth.month()).isEqualTo(Month.JANUARY);
         
         // And: Remaining 11 months have base amount
         for (int i = 1; i < 12; i++) {
-            MonthlyAllocation month = allocation.getMonthlyAllocations().get(i);
-            assertThat(month.recognizedAmount()).isEqualTo(dollars(83.33));
-            assertThat(month.hasRoundingAdjustment()).isFalse();
+            MonthlyAllocation monthAlloc = allocation.getMonthlyAllocations().get(i);
+            assertThat(monthAlloc.amount()).isEqualTo(dollars(83.33));
         }
         
         // And: Sum still equals original
@@ -1019,16 +977,14 @@ Add these tests to `AllocationCalculatorTest.java`:
         
         // Then: Middle month (June, index 5) has the adjusted amount
         MonthlyAllocation middleMonth = allocation.getMonthlyAllocations().get(5);
-        assertThat(middleMonth.recognizedAmount()).isEqualTo(dollars(83.37));
-        assertThat(middleMonth.hasRoundingAdjustment()).isTrue();
-        assertThat(middleMonth.recognitionPeriod()).isEqualTo(Month.JUNE);
+        assertThat(middleMonth.amount()).isEqualTo(dollars(83.37));
+        assertThat(middleMonth.month()).isEqualTo(Month.JUNE);
         
         // And: Other months have base amount
         for (int i = 0; i < 12; i++) {
             if (i != 5) {
-                MonthlyAllocation month = allocation.getMonthlyAllocations().get(i);
-                assertThat(month.recognizedAmount()).isEqualTo(dollars(83.33));
-                assertThat(month.hasRoundingAdjustment()).isFalse();
+                MonthlyAllocation monthAlloc = allocation.getMonthlyAllocations().get(i);
+                assertThat(monthAlloc.amount()).isEqualTo(dollars(83.33));
             }
         }
         
@@ -1646,11 +1602,12 @@ public record ResponseDto(
      * - Keeps related structures together
      * - Clear namespace
      * - Only used in response context
+     * 
+     * START SIMPLE: Just month and amount. No flags or extra metadata yet.
      */
     public record MonthlyAmountDto(
         String month,
-        MonetaryAmount amount,
-        boolean hasRemainder
+        MonetaryAmount amount
     ) {}
 
     /**
@@ -1671,9 +1628,8 @@ public record ResponseDto(
         // Convert list of domain objects to list of DTOs
         List<MonthlyAmountDto> dtoAllocations = allocation.getMonthlyAllocations().stream()
             .map(ma -> new MonthlyAmountDto(
-                ma.periodName(),              // Domain: Month enum → DTO: String
-                ma.recognizedAmount(),        // Pass through MonetaryAmount
-                ma.hasRoundingAdjustment()    // Pass through boolean
+                ma.month().name(),     // Domain: Month enum → DTO: String
+                ma.amount()            // Pass through MonetaryAmount
             ))
             .collect(Collectors.toList());
         
@@ -2082,17 +2038,22 @@ Current UI just shows JSON blob. Let's make it user-friendly:
         
         // Clear and populate table
         allocationsTable.innerHTML = "";
+        
+        // Find base amount to identify which month is adjusted
+        const baseAmount = data.baseMonthlyAmount.number || data.baseMonthlyAmount.amount;
+        
         data.allocations.forEach((allocation) => {
+          const allocAmount = allocation.amount.number || allocation.amount.amount;
+          const isAdjusted = Math.abs(allocAmount - baseAmount) > 0.001; // Small epsilon for comparison
+          
           const row = document.createElement("tr");
-          row.className = allocation.hasRemainder 
-            ? "bg-indigo-900 bg-opacity-30" 
-            : "";
+          row.className = isAdjusted ? "bg-indigo-900 bg-opacity-30" : "";
           
           row.innerHTML = `
             <td class="px-4 py-3 text-sm font-medium">${formatMonth(allocation.month)}</td>
             <td class="px-4 py-3 text-sm text-right font-mono">${formatMoney(allocation.amount)}</td>
             <td class="px-4 py-3 text-sm text-center">
-              ${allocation.hasRemainder 
+              ${isAdjusted
                 ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-600 text-white">Adjusted</span>' 
                 : '<span class="text-gray-500">—</span>'
               }
@@ -2129,65 +2090,56 @@ Current UI just shows JSON blob. Let's make it user-friendly:
 
 ---
 
-## 🔄 Optional Refactoring (If Time Permits)
+## 🔄 Optional Enhancements (If Time Permits)
 
 ### 💬 What to Say
 
-> "Now that the core functionality works, I can refactor to improve readability. I notice we're creating MonthlyAllocation objects with boolean flags that aren't immediately clear. Let me add factory methods to express intent better."
+> "The core functionality is working. If we have time, there are a couple of enhancements we could discuss. For example, we could add a flag to explicitly mark which month received the adjustment, rather than having the UI figure it out by comparing amounts. What do you think?"
 
-### Optional: Add Factory Methods to MonthlyAllocation
+### Enhancement 1: Add Adjustment Flag to MonthlyAllocation
 
-**If you see value in making the code more expressive:**
+**Why you might add this:**
+- Makes it explicit which month was adjusted
+- UI doesn't need to compare amounts
+- More self-documenting
+
+**Trade-off:**
+- More complexity in domain model
+- Adds a field that can be derived
+- Current approach works fine
 
 ```java
 public record MonthlyAllocation(
-    Month recognitionPeriod,
-    MonetaryAmount recognizedAmount,
-    boolean hasRoundingAdjustment
+    Month month,
+    MonetaryAmount amount,
+    boolean hasRemainder  // Optional enhancement
 ) {
-    // ... existing validation and periodName() ...
-    
-    /**
-     * Factory method for standard allocation (without adjustment)
-     * Improves readability over: new MonthlyAllocation(month, amount, false)
-     */
-    public static MonthlyAllocation standard(Month period, MonetaryAmount amount) {
-        return new MonthlyAllocation(period, amount, false);
+    // ... validation ...
+}
+```
+
+### Enhancement 2: Add Helper Methods
+
+**If you see repetitive code in tests:**
+
+```java
+public record MonthlyAllocation(...) {
+    // Factory methods for clearer intent
+    public static MonthlyAllocation standard(Month month, MonetaryAmount amount) {
+        return new MonthlyAllocation(month, amount, false);
     }
     
-    /**
-     * Factory method for adjusted allocation
-     * Improves readability over: new MonthlyAllocation(month, amount, true)
-     */
-    public static MonthlyAllocation adjusted(Month period, MonetaryAmount amount) {
-        return new MonthlyAllocation(period, amount, true);
+    public static MonthlyAllocation adjusted(Month month, MonetaryAmount amount) {
+        return new MonthlyAllocation(month, amount, true);
     }
 }
 ```
 
-**Then update AllocationCalculator:**
-
-```java
-// Before:
-allocations.add(new MonthlyAllocation(months[i], adjustedAmount, true));
-allocations.add(new MonthlyAllocation(months[i], baseAmount, false));
-
-// After (more expressive):
-allocations.add(MonthlyAllocation.adjusted(months[i], adjustedAmount));
-allocations.add(MonthlyAllocation.standard(months[i], baseAmount));
-```
-
-**Benefits to discuss:**
-- More readable: "adjusted" vs "true"
-- Self-documenting code
-- Easier to understand intent
-- Standard factory method pattern
-
-**When to add this:**
-- ✅ If interviewer values expressiveness
-- ✅ If you have extra time
+**When to add:**
+- ✅ If interviewer asks for more expressiveness
+- ✅ If you see duplication
 - ✅ As part of refactoring discussion
-- ❌ Not critical for core functionality
+- ❌ Not needed for core functionality
 
 ---
 
