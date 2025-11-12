@@ -1645,7 +1645,7 @@ public record RequestDto(
      * This is where HTTP concerns end and domain begins.
      */
     public RevenueRecognitionRequest toDomain() {
-        return new RevenueRecognitionRequest(amount, roundingPlacement);
+        return new RevenueRecognitionRequest(amount, roundingPlacement, Month.JANUARY);
     }
 }
 ```
@@ -2181,11 +2181,351 @@ Current UI just shows JSON blob. Let's make it user-friendly:
 
 ---
 
-## 🔄 Optional Enhancements (If Time Permits)
+## Phase 7: Business Enhancement - Start Month Support
+
+### 🎯 Why This Enhancement?
+
+**Real-World Business Need:**
+- Contracts don't always start in January
+- Customer signs up in March → allocation should start March-February
+- SaaS subscriptions can start any month
+- Financial year might differ from calendar year
+
+**What this demonstrates:**
+- ✅ Business domain understanding
+- ✅ Thinking beyond the basic requirements
+- ✅ Designing for real-world scenarios
+- ✅ Backend focus (not UI polish)
 
 ### 💬 What to Say
 
-> "The core functionality is working. If we have time, there are a couple of enhancements we could discuss. For example, we could add a flag to explicitly mark which month received the adjustment, rather than having the UI figure it out by comparing amounts. What do you think?"
+> "The core functionality works well. I'd like to add a business enhancement - supporting different start months. Right now we hardcode January, but in reality, customers can sign contracts any month. A customer signing in March would have their recognition period run March through February. This is a common requirement in SaaS revenue recognition. Let me show you how we can add this with minimal changes, thanks to our clean architecture."
+
+---
+
+### Step 7.1: Add Start Month to Request
+
+#### 🎯 Reasoning
+
+**Why add to domain request?**
+- It's a business concept, not just a UI preference
+- Affects the allocation logic
+- Should be validated
+
+**Why default to January?**
+- Backward compatible
+- Common case
+- Optional parameter
+
+#### 📝 Code
+
+**Update:** `src/main/java/com/rillet/codingchallenge/accounting/domain/RevenueRecognitionRequest.java`
+
+```java
+package com.rillet.codingchallenge.accounting.domain;
+
+import javax.money.MonetaryAmount;
+import java.time.Month;
+import java.util.Objects;
+
+public record RevenueRecognitionRequest(
+    MonetaryAmount amount,
+    RoundingPlacement roundingPlacement,
+    Month startMonth  // NEW: Starting month for allocation
+) {
+    /**
+     * Compact constructor with validation and defaults
+     */
+    public RevenueRecognitionRequest {
+        Objects.requireNonNull(amount, "Amount cannot be null");
+        Objects.requireNonNull(roundingPlacement, "Rounding placement cannot be null");
+        
+        if (amount.isNegative()) {
+            throw new IllegalArgumentException(
+                "Amount cannot be negative: " + amount
+            );
+        }
+        
+        // Default to January if not specified
+        if (startMonth == null) {
+            startMonth = Month.JANUARY;
+        }
+    }
+    
+    /**
+     * Factory method for simple case (starts in January)
+     */
+    public static RevenueRecognitionRequest withDefaults(MonetaryAmount amount) {
+        return new RevenueRecognitionRequest(amount, RoundingPlacement.LAST, Month.JANUARY);
+    }
+}
+```
+
+---
+
+### Step 7.2: Update Calculator to Handle Start Month
+
+#### 🎯 Reasoning
+
+**How start month affects allocation:**
+- Allocation runs for 12 months starting from specified month
+- Wraps around year boundary if needed
+- Placement (FIRST/LAST/MIDDLE) is relative to allocation period
+
+**Example:**
+```
+Start: March, Amount: $1200, Placement: FIRST
+Result:
+- March (1st month): $100 + adjustment
+- April: $100
+- ...
+- February (12th month): $100
+```
+
+#### 📝 Code
+
+**Update:** `src/main/java/com/rillet/codingchallenge/accounting/domain/AllocationCalculator.java`
+
+Add this method after the existing `buildAllocations()`:
+
+```java
+/**
+ * Builds allocations starting from specified month.
+ * 
+ * WHY THIS MATTERS:
+ * Contracts can start any month. A contract starting in March runs:
+ * March, April, May, ..., January, February (wraps around year)
+ * 
+ * @param baseAmount Standard monthly amount
+ * @param adjustedAmount Amount for the adjustment month
+ * @param adjustmentIndex Which month in the sequence (0-11) gets adjustment
+ * @param startMonth Which month to start from
+ * @return List of 12 MonthlyAllocation objects in chronological order
+ */
+private List<MonthlyAllocation> buildAllocations(
+    MonetaryAmount baseAmount,
+    MonetaryAmount adjustedAmount,
+    int adjustmentIndex,
+    Month startMonth
+) {
+    List<MonthlyAllocation> allocations = new ArrayList<>(MONTHS_IN_YEAR);
+    
+    // Calculate months in order, starting from startMonth
+    for (int i = 0; i < MONTHS_IN_YEAR; i++) {
+        // Wrap around: if start is MARCH (value 3), and i=10, we get JANUARY (value 1)
+        Month currentMonth = startMonth.plus(i);
+        
+        MonetaryAmount amountForThisMonth = (i == adjustmentIndex) 
+            ? adjustedAmount 
+            : baseAmount;
+        
+        allocations.add(new MonthlyAllocation(currentMonth, amountForThisMonth));
+    }
+    
+    return allocations;
+}
+```
+
+**Update the main `calculate()` method to use it:**
+
+```java
+public RevenueAllocation calculate(RevenueRecognitionRequest request) {
+    MonetaryAmount amount = request.amount();
+    RoundingPlacement placement = request.roundingPlacement();
+    Month startMonth = request.startMonth();  // NEW
+    
+    // ... existing calculation logic ...
+    
+    // Step 6: Build monthly allocations (NOW with start month)
+    List<MonthlyAllocation> allocations = buildAllocations(
+        baseMonthlyAmount,
+        adjustedMonthAmount,
+        adjustmentIndex,
+        startMonth  // NEW: Pass start month
+    );
+    
+    return new RevenueAllocation(
+        amount,
+        allocations,
+        baseMonthlyAmount,
+        roundingAdjustment,
+        placement
+    );
+}
+```
+
+---
+
+### Step 7.3: Add Tests for Start Month
+
+#### 🎯 Reasoning
+
+**What to test:**
+- Allocation starts from correct month
+- Wraps around year correctly
+- Placement still works relative to allocation period
+- Sum still equals annual
+
+#### 📝 Code
+
+**Add to:** `AllocationCalculatorTest.java`
+
+```java
+/**
+ * TEST: Different start months
+ * 
+ * BUSINESS SCENARIO: Customer signs contract in March, not January
+ */
+@Test
+void shouldSupportDifferentStartMonths() {
+    // Given: Contract starting in March
+    RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+        dollars(1200),
+        RoundingPlacement.LAST,
+        Month.MARCH
+    );
+    
+    // When: We calculate
+    RevenueAllocation allocation = calculator.calculate(request);
+    
+    // Then: First allocation is for March
+    assertThat(allocation.monthlyAllocations().get(0).month()).isEqualTo(Month.MARCH);
+    
+    // And: Last allocation is for February (wrapped around)
+    assertThat(allocation.monthlyAllocations().get(11).month()).isEqualTo(Month.FEBRUARY);
+    
+    // And: All allocations are $100 (perfect division)
+    assertThat(allocation.monthlyAllocations())
+        .allMatch(ma -> ma.amount().isEqualTo(dollars(100)));
+    
+    // And: Sum still equals original
+    assertThat(allocation.annualAmount()).isEqualTo(dollars(1200));
+}
+
+@Test
+void shouldApplyPlacementRelativeToStartMonth() {
+    // Given: Start in March, FIRST placement, amount with rounding
+    RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+        dollars(1000),
+        RoundingPlacement.FIRST,
+        Month.MARCH
+    );
+    
+    // When: We calculate
+    RevenueAllocation allocation = calculator.calculate(request);
+    
+    // Then: FIRST month (March) gets the adjustment
+    MonthlyAllocation firstAllocation = allocation.monthlyAllocations().get(0);
+    assertThat(firstAllocation.month()).isEqualTo(Month.MARCH);
+    assertThat(firstAllocation.amount()).isEqualTo(dollars(83.37));  // Has adjustment
+    
+    // And: Other months get base amount
+    for (int i = 1; i < 12; i++) {
+        assertThat(allocation.monthlyAllocations().get(i).amount())
+            .isEqualTo(dollars(83.33));
+    }
+}
+
+@Test
+void shouldHandleMiddlePlacementWithDifferentStart() {
+    // Given: Start in June, MIDDLE placement
+    RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+        dollars(1000),
+        RoundingPlacement.MIDDLE,
+        Month.JUNE
+    );
+    
+    // When: We calculate
+    RevenueAllocation allocation = calculator.calculate(request);
+    
+    // Then: Middle of allocation period (6 months from June = November) gets adjustment
+    MonthlyAllocation middleAllocation = allocation.monthlyAllocations().get(5);
+    assertThat(middleAllocation.month()).isEqualTo(Month.NOVEMBER);
+    assertThat(middleAllocation.amount()).isEqualTo(dollars(83.37));
+}
+```
+
+---
+
+### Step 7.4: Update RequestDto (Infrastructure)
+
+#### 📝 Code
+
+**Update:** `RequestDto.java`
+
+```java
+package com.rillet.codingchallenge.accounting.infra.dataclasses;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.rillet.codingchallenge.accounting.domain.RevenueRecognitionRequest;
+import com.rillet.codingchallenge.accounting.domain.RoundingPlacement;
+
+import javax.money.MonetaryAmount;
+import java.time.Month;
+
+public record RequestDto(
+    MonetaryAmount amount,
+    RoundingPlacement roundingPlacement,
+    Month startMonth  // NEW: Optional start month
+) {
+    @JsonCreator
+    public RequestDto(
+        @JsonProperty("amount") MonetaryAmount amount,
+        @JsonProperty("roundingPlacement") RoundingPlacement roundingPlacement,
+        @JsonProperty("startMonth") Month startMonth
+    ) {
+        this.amount = amount;
+        this.roundingPlacement = roundingPlacement != null ? roundingPlacement : RoundingPlacement.LAST;
+        this.startMonth = startMonth != null ? startMonth : Month.JANUARY;  // Default to January
+    }
+    
+    public RevenueRecognitionRequest toDomain() {
+        return new RevenueRecognitionRequest(amount, roundingPlacement, startMonth);
+    }
+}
+```
+
+**Example JSON:**
+```json
+{
+  "amount": {"value": 1000, "currency": "USD"},
+  "roundingPlacement": "FIRST",
+  "startMonth": "MARCH"
+}
+```
+
+---
+
+### Step 7.5: Run Tests
+
+```bash
+./gradlew test
+```
+
+**All tests should pass!** ✅
+
+---
+
+### 💡 What This Demonstrates
+
+**To the interviewer:**
+
+1. **Business Understanding**
+   > "I understand that revenue recognition periods don't always align with calendar years. This is important for SaaS companies where customers sign up throughout the year."
+
+2. **Clean Architecture Benefits**
+   > "Notice how easy this was to add? Because we separated domain from infrastructure, I just added a field to the domain request, updated the calculation logic, and the DTO conversion was trivial. That's the benefit of layered architecture."
+
+3. **Backward Compatibility**
+   > "I defaulted startMonth to January, so existing API clients don't break. This shows I'm thinking about API evolution and backward compatibility."
+
+4. **Test Coverage**
+   > "I added tests for different start months, including edge cases like wrapping around the year. This ensures the feature works correctly in all scenarios."
+
+---
+
+## 🔄 Optional Enhancements (If Time Permits)
 
 ### Enhancement 1: Add Adjustment Flag to MonthlyAllocation
 
