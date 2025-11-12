@@ -1,6 +1,7 @@
 package com.rillet.codingchallenge.accounting.infra;
 
 import com.rillet.codingchallenge.accounting.application.AllocateAmount;
+import com.rillet.codingchallenge.accounting.domain.RoundingPlacement;
 import com.rillet.codingchallenge.accounting.infra.dataclasses.RequestDto;
 import com.rillet.codingchallenge.accounting.infra.dataclasses.ResponseDto;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +21,7 @@ public class AmountsController {
 
     @PostMapping
     public ResponseEntity<ResponseDto> createAmounts(@RequestBody RequestDto request) {
-        var result = allocateAmount.execute(request.amount());
+        var result = allocateAmount.execute(request.amount(), RoundingPlacement.LAST);
         return ResponseEntity.ok(ResponseDto.from(result));
     }
 }
