@@ -273,7 +273,7 @@ void shouldAllowUserToChoosePlacement() {
 
 1. **Understand the problem** ✅ (You're here!)
 2. **Read the architecture guide** → [ARCHITECTURE_AND_DDD_GUIDE.md](ARCHITECTURE_AND_DDD_GUIDE.md)
-3. **Follow step-by-step** → [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)
+3. **Follow step-by-step** → [IMPLEMENTATION_GUIDE.md](OLD_IMPLEMENTATION_GUIDE.md)
 4. **Copy code, run tests** → Build it!
 
 ---
@@ -295,5 +295,5 @@ It's about:
 
 ---
 
-Now go to **[THE_PROBLEM_EXPLAINED.md](THE_PROBLEM_EXPLAINED.md)** for more details, or jump straight to **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** to start coding!
+Now go to **[THE_PROBLEM_EXPLAINED.md](THE_PROBLEM_EXPLAINED.md)** for more details, or jump straight to **[IMPLEMENTATION_GUIDE.md](OLD_IMPLEMENTATION_GUIDE.md)** to start coding!
 
