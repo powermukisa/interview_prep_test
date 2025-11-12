@@ -17,12 +17,19 @@ This guide follows a **natural, incremental approach** like real-world coding:
 - ✅ Add convenience methods/features when you see repetition
 - ✅ Refactor when it adds clear value
 - ❌ Don't add "nice-to-have" features upfront
+- ✅ **Use existing class names** (AllocateAmount, not AllocateRevenue)
 
 **Examples:**
+- We use the existing `AllocateAmount` **name** (convert to interface for hexagonal arch)
 - We start with basic constructors, not factory methods
 - We add validation when needed, not everything upfront
 - We introduce helper methods when we see duplication
 - Optional improvements are marked clearly
+
+**Note on AllocateAmount:**
+- We convert the existing class to a **port interface** (demonstrates hexagonal architecture)
+- Implementation becomes `AllocateAmountUseCase`
+- This shows understanding of ports & adapters pattern while keeping familiar naming
 
 **During the interview:**
 1. Read the reasoning section out loud (paraphrase naturally)
@@ -1143,40 +1150,66 @@ Add these tests to `AllocationCalculatorTest.java`:
 
 ---
 
-## Phase 4: Application Layer
+## Phase 4: Application Layer (Ports & Adapters)
 
 ### 🎯 Why Application Layer?
 
 **Hexagonal Architecture:**
-- Application layer orchestrates use cases
-- Sits between infrastructure and domain
-- Defines ports (interfaces)
-- Thin layer - no business logic
+- Application layer defines **ports** (interfaces)
+- Ports are the boundaries between layers
+- Adapters (controllers) depend on ports, not implementations
+- Thin layer - no business logic, just orchestration
+
+**The Port & Adapter Pattern:**
+```
+┌─────────────────────────────────────────────────┐
+│  AmountsController (Web Adapter)                │
+│  Depends on → AllocateAmount (PORT/INTERFACE)   │
+└─────────────────────────────────────────────────┘
+                     ↓ calls
+┌─────────────────────────────────────────────────┐
+│  AllocateAmount (PORT - interface)              │
+│  execute(request) → RevenueAllocation           │
+└─────────────────────────────────────────────────┘
+                     ↑ implements
+┌─────────────────────────────────────────────────┐
+│  AllocateAmountUseCase (IMPLEMENTATION)         │
+│  Delegates to → AllocationCalculator (domain)   │
+└─────────────────────────────────────────────────┘
+```
+
+**Key insight:** Controller depends on **AllocateAmount interface**, not **AllocateAmountUseCase class**!
 
 #### 💬 What to Say
 
-> "Now I'll create the application layer. This is where we define the port interface and the use case implementation. The port defines what our application offers to the outside world, and the use case orchestrates the domain service. This layer is thin - it just coordinates, the actual business logic is in the domain."
+> "Now I'll refactor AllocateAmount to follow hexagonal architecture. The current AllocateAmount class is just a placeholder. I'll convert it into a port interface - this is the contract that defines what our application offers. Then I'll create AllocateAmountUseCase as the implementation. This demonstrates the ports and adapters pattern: the controller will depend on the AllocateAmount interface, not the concrete AllocateAmountUseCase implementation. This is the Dependency Inversion Principle - depend on abstractions, not concretions. It also shows I understand hexagonal architecture where ports define boundaries between layers."
 
-### Step 4.1: Port Interface
+### Step 4.1: Convert AllocateAmount to Port Interface
 
 #### 🎯 Reasoning
 
-**Why an interface?**
-- Hexagonal architecture pattern
-- Adapters depend on port, not implementation
-- Easy to swap implementations
-- Clear contract
+**Why convert to interface?**
+- Demonstrates hexagonal architecture (ports & adapters)
+- Controller depends on abstraction, not concrete class
+- Follows Dependency Inversion Principle
+- Shows understanding of clean architecture
+- Makes testing easier (can mock the port)
+
+**Why keep the name AllocateAmount?**
+- Consistent with existing codebase
+- No unnecessary renaming
+- Clear purpose (allocates an amount)
 
 #### ✅ Benefits
 
-- Dependency Inversion Principle
-- Testable (can mock interface)
-- Multiple adapters can use same port
-- Clear API boundary
+- **Hexagonal Architecture**: Clear port definition
+- **Dependency Inversion**: Controller depends on abstraction
+- **Testability**: Can mock the interface
+- **Flexibility**: Easy to add different implementations
 
 #### 📝 Code
 
-**File:** `src/main/java/com/rillet/codingchallenge/accounting/application/AllocateRevenue.java`
+**File:** Replace `src/main/java/com/rillet/codingchallenge/accounting/application/AllocateAmount.java`
 
 ```java
 package com.rillet.codingchallenge.accounting.application;
@@ -1188,24 +1221,23 @@ import com.rillet.codingchallenge.accounting.domain.RevenueRecognitionRequest;
  * DRIVING PORT: Defines the use case for revenue allocation.
  * 
  * This is the hexagonal architecture port that adapters call into.
- * The domain implements this; adapters depend on it.
+ * The implementation handles the actual orchestration; adapters depend on this contract.
  * 
  * WHY AN INTERFACE:
- * - Follows Dependency Inversion Principle
- * - Adapters depend on this abstraction, not concrete implementation
- * - Makes it easy to add new adapters (CLI, gRPC, message queue)
- * - Testable (can mock for adapter tests)
+ * - Hexagonal architecture pattern (port)
+ * - Controllers depend on this abstraction, not concrete implementation
+ * - Follows Dependency Inversion Principle (SOLID)
+ * - Makes testing easier (can mock for adapter tests)
+ * - Could have multiple implementations (e.g., cached, async, etc.)
  * 
  * DESIGN NOTES:
- * - Lives in application package (not domain)
- * - Uses domain types (RevenueRecognitionRequest, RevenueAllocation)
+ * - Uses existing class name from codebase (AllocateAmount)
  * - Simple, focused contract (Single Responsibility)
+ * - Uses domain types (RevenueRecognitionRequest, RevenueAllocation)
  */
-public interface AllocateRevenue {
+public interface AllocateAmount {
     /**
      * Allocates annual revenue into monthly recognition periods.
-     * 
-     * This is the primary use case for revenue recognition allocation.
      * 
      * @param request The revenue recognition parameters
      * @return The complete allocation aggregate
@@ -1217,34 +1249,23 @@ public interface AllocateRevenue {
 
 ---
 
-### Step 4.2: Use Case Implementation
+### Step 4.2: Create Implementation Class
 
 #### 🎯 Reasoning
 
-**Why thin application service?**
-- Orchestrates domain service
-- No business logic here
-- Just coordinates and delegates
+**Why separate implementation?**
+- Port (interface) defines contract
+- Implementation has the actual orchestration logic
+- Clean separation between "what" and "how"
 
-**Why @Service?**
-- Spring manages lifecycle
-- Allows dependency injection
-- Port implementation
-
-#### ✅ Benefits
-
-- Single Responsibility
-- Easy to test
-- Clear separation
-- Extensible (can add logging, transactions, etc.)
-
-#### 💬 What to Say
-
-> "The use case implementation is intentionally thin. It just takes the request and delegates to the domain service. In the future, this is where we'd add cross-cutting concerns like transaction management, logging, or persistence. But the core business logic stays in the domain where it belongs."
+**Why thin implementation?**
+- Application layer just orchestrates
+- Business logic stays in domain
+- Easy to add cross-cutting concerns later
 
 #### 📝 Code
 
-**File:** `src/main/java/com/rillet/codingchallenge/accounting/application/AllocateRevenueUseCase.java`
+**File:** Create `src/main/java/com/rillet/codingchallenge/accounting/application/AllocateAmountUseCase.java`
 
 ```java
 package com.rillet.codingchallenge.accounting.application;
@@ -1255,44 +1276,40 @@ import com.rillet.codingchallenge.accounting.domain.RevenueRecognitionRequest;
 import org.springframework.stereotype.Service;
 
 /**
- * APPLICATION SERVICE: Orchestrates the revenue allocation use case.
+ * APPLICATION SERVICE: Implements the AllocateAmount port.
  * 
- * This implements the port interface and coordinates domain services.
  * This is a THIN layer - business logic is in domain, not here.
  * 
  * WHY THIN:
  * - Application layer orchestrates, doesn't contain business logic
  * - Easy to understand and maintain
- * - Domain service does the heavy lifting
- * - This just coordinates and adds infrastructure concerns
+ * - Domain service (AllocationCalculator) does the heavy lifting
+ * - This just coordinates
  * 
  * RESPONSIBILITIES:
- * - Validate inputs (domain objects do this)
- * - Call domain service
- * - Handle transactions (if needed - not yet)
- * - Log operations (if needed - not yet)
- * - Persist results (if needed - not yet)
+ * - Implement port interface
+ * - Delegate to domain service
+ * - (Future: transactions, logging, persistence)
  * 
  * DESIGN NOTES:
- * - Implements the port interface
- * - Depends on domain service (AllocationCalculator)
- * - Uses Spring @Service for lifecycle management
- * - Constructor injection (testable, immutable)
+ * - Implements AllocateAmount port
+ * - Constructor injection for dependencies
+ * - Delegates to AllocationCalculator (domain)
  */
 @Service
-public class AllocateRevenueUseCase implements AllocateRevenue {
+public class AllocateAmountUseCase implements AllocateAmount {
     private final AllocationCalculator calculator;
     
     /**
      * Constructor injection (preferred over field injection)
      * 
      * WHY CONSTRUCTOR INJECTION:
-     * - Testable (can pass mock in tests)
+     * - Testable (can pass dependencies in tests)
      * - Immutable (field is final)
      * - Clear dependencies
      * - Fails fast if dependency missing
      */
-    public AllocateRevenueUseCase(AllocationCalculator calculator) {
+    public AllocateAmountUseCase(AllocationCalculator calculator) {
         this.calculator = calculator;
     }
     
@@ -1308,28 +1325,23 @@ public class AllocateRevenueUseCase implements AllocateRevenue {
      * WHY SO SIMPLE:
      * This is intentional! Application services should orchestrate,
      * not contain business logic. The calculator has the business rules.
-     * 
-     * FUTURE ENHANCEMENTS:
-     * - Add @Transactional when we have persistence
-     * - Add logging: logger.info("Allocating {} for {}", request.annualAmount(), ...)
-     * - Add metrics: metrics.record("allocation.executed", ...)
-     * - Save to repository: repository.save(allocation)
      */
     @Override
     public RevenueAllocation execute(RevenueRecognitionRequest request) {
-        // Request is self-validating (domain value object validates in constructor)
+        // Request is self-validating (domain value object)
         
-        // Delegate to domain service for calculation
-        // This is where the actual business logic happens
-        RevenueAllocation allocation = calculator.calculate(request);
-        
-        // Future: Could persist here
-        // allocationRepository.save(allocation);
-        
-        return allocation;
+        // Delegate to domain service for business logic
+        return calculator.calculate(request);
     }
 }
 ```
+
+#### ✅ Benefits
+
+- **Port & Adapter Pattern**: Interface defines contract
+- **Thin Orchestration**: No business logic here
+- **Dependency Inversion**: Controller depends on AllocateAmount interface
+- **Testable**: Easy to mock the port
 
 ---
 
@@ -1648,14 +1660,14 @@ public record ResponseDto(
 1. Receive HTTP request
 2. Validate DTO structure
 3. Convert DTO → domain
-4. Call use case through port
+4. Call application service
 5. Convert domain → DTO
 6. Return HTTP response
 
-**Why depend on port, not implementation?**
-- Dependency Inversion Principle
-- Can swap implementations
-- Testable (mock the port)
+**Why inject the service?**
+- Spring dependency injection
+- Testable (can mock in tests)
+- Clear dependencies
 
 #### ✅ Benefits
 
@@ -1675,9 +1687,8 @@ public record ResponseDto(
 ```java
 package com.rillet.codingchallenge.accounting.infra;
 
-import com.rillet.codingchallenge.accounting.application.AllocateRevenue;
+import com.rillet.codingchallenge.accounting.application.AllocateAmount;
 import com.rillet.codingchallenge.accounting.domain.RevenueAllocation;
-import com.rillet.codingchallenge.accounting.domain.RevenueRecognitionRequest;
 import com.rillet.codingchallenge.accounting.infra.dataclasses.RequestDto;
 import com.rillet.codingchallenge.accounting.infra.dataclasses.ResponseDto;
 import org.springframework.http.HttpStatus;
@@ -1690,23 +1701,18 @@ import org.springframework.web.bind.annotation.*;
  * This is a hexagonal architecture adapter that:
  * 1. Receives HTTP requests
  * 2. Converts DTOs to domain objects
- * 3. Calls the port (AllocateRevenue)
+ * 3. Calls the application service
  * 4. Converts domain objects back to DTOs
  * 5. Returns HTTP responses
  * 
  * DESIGN DECISIONS:
  * 
- * 1. Depends on PORT not implementation:
- *    - Field type is AllocateRevenue (interface)
- *    - Not AllocateRevenueUseCase (concrete class)
- *    - Follows Dependency Inversion Principle
- * 
- * 2. Explicit DTO conversion:
+ * 1. Explicit DTO conversion:
  *    - RequestDto → Domain (via toDomain())
  *    - Domain → ResponseDto (via fromDomain())
  *    - Clear adapter pattern
  * 
- * 3. HTTP error handling:
+ * 2. HTTP error handling:
  *    - Domain validation errors → 400 Bad Request
  *    - Unexpected errors → 500 Internal Server Error
  *    - Could be enhanced with @ControllerAdvice
@@ -1717,9 +1723,9 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/amounts")
 public class AmountsController {
-    // NOTE: Type is AllocateRevenue (PORT), not AllocateRevenueUseCase (implementation)!
+    // IMPORTANT: Type is AllocateAmount (INTERFACE/PORT), not AllocateAmountUseCase (implementation)!
     // This is Dependency Inversion - depend on abstraction, not concrete class.
-    private final AllocateRevenue allocateRevenue;
+    private final AllocateAmount allocateAmount;
 
     /**
      * Constructor injection (preferred over field injection)
@@ -1728,9 +1734,14 @@ public class AmountsController {
      * - Testable (can pass mock in tests)
      * - Immutable (field is final)
      * - Clear dependencies
+     * 
+     * HEXAGONAL ARCHITECTURE:
+     * Spring will inject AllocateAmountUseCase (the implementation),
+     * but we only depend on AllocateAmount (the port).
+     * We don't know (or care) which concrete class implements it!
      */
-    public AmountsController(AllocateRevenue allocateRevenue) {
-        this.allocateRevenue = allocateRevenue;
+    public AmountsController(AllocateAmount allocateAmount) {
+        this.allocateAmount = allocateAmount;
     }
 
     /**
@@ -1765,7 +1776,7 @@ public class AmountsController {
      * - Add metrics
      */
     @PostMapping
-    public ResponseEntity<ResponseDto> allocateRevenue(
+    public ResponseEntity<ResponseDto> createAmounts(
         @RequestBody RequestDto requestDto
     ) {
         try {
@@ -1773,10 +1784,10 @@ public class AmountsController {
             // This is the adapter pattern - translating between layers
             RevenueRecognitionRequest domainRequest = requestDto.toDomain();
             
-            // Step 2: Call domain through port interface
-            // We don't know (or care) what concrete implementation handles this
-            // That's the beauty of Dependency Inversion!
-            RevenueAllocation allocation = allocateRevenue.execute(domainRequest);
+            // Step 2: Call application service through port interface
+            // We're calling AllocateAmount (interface), not AllocateAmountUseCase (implementation)
+            // Spring injects the implementation, but we only depend on the abstraction
+            RevenueAllocation allocation = allocateAmount.execute(domainRequest);
             
             // Step 3: Convert domain aggregate → Infrastructure DTO
             // Again, adapter pattern - translating layers
@@ -2177,8 +2188,8 @@ Visit: http://localhost:8080
 
 ✅ **Hexagonal Architecture**
 - Clear separation: Domain → Application → Infrastructure
-- Port interface pattern
-- Dependency Inversion Principle
+- Service delegation pattern
+- Layered architecture
 
 ✅ **Domain-Driven Design**
 - Value Objects (immutable, self-validating)
