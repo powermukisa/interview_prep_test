@@ -21,7 +21,7 @@ This folder contains comprehensive guides for implementing the revenue recogniti
 
 ---
 
-### 1️⃣ **[IMPLEMENTATION_GUIDE.md](OLD_IMPLEMENTATION_GUIDE.md)** - THEN BUILD IT
+### 1️⃣ **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** - THEN BUILD IT
 **Your step-by-step implementation checklist with copy-paste code.**
 
 - Complete TDD walkthrough (Red-Green-Refactor)

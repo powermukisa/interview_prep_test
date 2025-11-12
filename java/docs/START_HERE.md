@@ -178,7 +178,7 @@ I've created **4 comprehensive guides** for you:
 - Interview talking points
 - Implementation checklist
 
-### 2. **[IMPLEMENTATION_GUIDE.md](OLD_IMPLEMENTATION_GUIDE.md)** ⬅️ Copy-paste code here!
+### 2. **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** ⬅️ Copy-paste code here!
 **Step-by-step implementation with all code**
 - Phase-by-phase walkthrough
 - Complete code for every file
@@ -375,7 +375,7 @@ cd /Users/power/code/rillet/coding-challenge-main/java
 ./gradlew test
 
 # Open your IDE and start with:
-# OLD_IMPLEMENTATION_GUIDE.md - Phase 1, Step 1.1
+# IMPLEMENTATION_GUIDE.md - Phase 1, Step 1.1
 ```
 
 **Good luck with your Rillet interview! 🎉**

@@ -9,12 +9,28 @@
 - 🏛️ **Architecture Notes** - Design principles in action
 - 📝 **Code** - Ready to copy/paste
 
+**Philosophy: Start Simple, Add As Needed**
+
+This guide follows a **natural, incremental approach** like real-world coding:
+- ✅ Start with bare minimum (just what you need right now)
+- ✅ Make tests pass first
+- ✅ Add convenience methods/features when you see repetition
+- ✅ Refactor when it adds clear value
+- ❌ Don't add "nice-to-have" features upfront
+
+**Examples:**
+- We start with basic constructors, not factory methods
+- We add validation when needed, not everything upfront
+- We introduce helper methods when we see duplication
+- Optional improvements are marked clearly
+
 **During the interview:**
 1. Read the reasoning section out loud (paraphrase naturally)
 2. Explain the benefits
 3. Then copy the code
 4. Run tests immediately after
 5. Discuss any trade-offs
+6. Mention optional improvements if there's time
 
 ---
 
@@ -228,47 +244,31 @@ import java.util.Objects;
  * Part of the ubiquitous language.
  */
 public record RevenueRecognitionRequest(
-    MonetaryAmount annualAmount,
+    MonetaryAmount amount,
     RoundingPlacement roundingPlacement
 ) {
-    private static final int PERIODS_IN_YEAR = 12;
-    
     /**
      * Compact constructor with validation (DDD: self-validating value object)
      * 
      * WHY: By validating here, we ensure invalid objects can never exist.
      * This is the "make invalid states unrepresentable" principle.
+     * 
+     * NOTE: We use "amount" (not "annualAmount") for consistency with RequestDto.
+     * The context (RevenueRecognitionRequest for annual allocation) makes it clear
+     * this is the total annual amount to be split.
+     * 
+     * START SIMPLE: We're just adding basic validation here. No factory methods
+     * or helper methods yet - we'll add those later if we find we need them.
      */
     public RevenueRecognitionRequest {
-        Objects.requireNonNull(annualAmount, "Annual amount cannot be null");
+        Objects.requireNonNull(amount, "Amount cannot be null");
         Objects.requireNonNull(roundingPlacement, "Rounding placement cannot be null");
         
-        if (annualAmount.isNegative()) {
+        if (amount.isNegative()) {
             throw new IllegalArgumentException(
-                "Annual amount cannot be negative: " + annualAmount
+                "Amount cannot be negative: " + amount
             );
         }
-    }
-    
-    /**
-     * Factory method with default placement (follows DDD patterns)
-     * 
-     * WHY: Provides a convenient way to create requests when the caller
-     * doesn't care about placement. Defaults to LAST (standard accounting practice).
-     */
-    public static RevenueRecognitionRequest of(MonetaryAmount annualAmount) {
-        return new RevenueRecognitionRequest(annualAmount, RoundingPlacement.LAST);
-    }
-    
-    /**
-     * Returns the number of periods for allocation.
-     * 
-     * DESIGN NOTE: This could be configurable in the future (quarterly, weekly),
-     * but for now it's fixed at 12 months. Having a method makes it easy to
-     * change later without affecting callers.
-     */
-    public int recognitionPeriods() {
-        return PERIODS_IN_YEAR;
     }
 }
 ```
@@ -355,27 +355,6 @@ public record MonthlyAllocation(
     }
     
     /**
-     * Factory method for standard allocation (without adjustment)
-     * 
-     * WHY: Makes code more readable at call site:
-     *   MonthlyAllocation.standard(JANUARY, amount)  <- Clear intent!
-     * vs:
-     *   new MonthlyAllocation(JANUARY, amount, false)  <- What's false mean?
-     */
-    public static MonthlyAllocation standard(Month period, MonetaryAmount amount) {
-        return new MonthlyAllocation(period, amount, false);
-    }
-    
-    /**
-     * Factory method for adjusted allocation
-     * 
-     * WHY: Expresses intent clearly that this month received the adjustment.
-     */
-    public static MonthlyAllocation adjusted(Month period, MonetaryAmount amount) {
-        return new MonthlyAllocation(period, amount, true);
-    }
-    
-    /**
      * Returns formatted period name for reporting
      * 
      * WHY: Encapsulates the formatting logic. If we want to change how months
@@ -384,6 +363,9 @@ public record MonthlyAllocation(
     public String periodName() {
         return recognitionPeriod.name();
     }
+    
+    // NOTE: We could add factory methods like standard() and adjusted() later
+    // if we find repetitive code. Start simple, refactor when needed!
 }
 ```
 
@@ -453,6 +435,13 @@ import java.util.Objects;
  *   Sum of all monthly allocations = annual amount (EXACTLY)
  * 
  * DESIGN DECISIONS:
+ * 
+ * 0. Naming: annualAmount vs amount
+ *    - We use "annualAmount" here (not just "amount") because this aggregate
+ *      contains BOTH the annual total AND monthly amounts
+ *    - Being explicit prevents confusion when reading code
+ *    - In RevenueRecognitionRequest, we use "amount" because context is clear
+ *    - Here, we need to distinguish annual from monthly
  * 
  * 1. Package-private constructor:
  *    - Only the domain service (AllocationCalculator) can create this
@@ -682,7 +671,10 @@ class AllocationCalculatorTest {
     @Test
     void shouldCalculatePerfectAllocationWhenDivisibleByTwelve() {
         // Given: An amount that divides evenly by 12
-        RevenueRecognitionRequest request = RevenueRecognitionRequest.of(dollars(1200));
+        RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+            dollars(1200),
+            RoundingPlacement.LAST
+        );
         
         // When: We calculate the allocation
         RevenueAllocation allocation = calculator.calculate(request);
@@ -813,13 +805,13 @@ public class AllocationCalculator {
      * @return A RevenueAllocation aggregate (validates sum = annual)
      */
     public RevenueAllocation calculate(RevenueRecognitionRequest request) {
-        MonetaryAmount annualAmount = request.annualAmount();
+        MonetaryAmount amount = request.amount();
         RoundingPlacement placement = request.roundingPlacement();
         
         // Step 1: Calculate base monthly amount with proper rounding
         // WHY ROUND: Ensures amount respects currency precision (e.g., 2 decimals for USD)
         MonetaryAmount baseMonthlyAmount = CurrenciesHelper.rounded(
-            annualAmount.divide(MONTHS_IN_YEAR)
+            amount.divide(MONTHS_IN_YEAR)
         );
         
         // Step 2: Determine which month gets the adjustment
@@ -832,7 +824,7 @@ public class AllocationCalculator {
         // Step 4: Remainder goes to the adjustment month
         // WHY: This guarantees sum = annual (no rounding error)
         // The adjusted month gets: annual - (base × 11)
-        MonetaryAmount adjustedMonthAmount = annualAmount.subtract(elevenMonthsTotal);
+        MonetaryAmount adjustedMonthAmount = amount.subtract(elevenMonthsTotal);
         
         // Step 5: Calculate the adjustment for metadata
         // This is the "extra" amount the adjusted month receives
@@ -849,7 +841,7 @@ public class AllocationCalculator {
         // NOTE: The aggregate constructor validates that sum = annual
         // If our algorithm is wrong, we'll get an exception here!
         return new RevenueAllocation(
-            annualAmount,
+            amount,
             allocations,
             baseMonthlyAmount,
             roundingAdjustment,
@@ -881,10 +873,10 @@ public class AllocationCalculator {
         for (int i = 0; i < MONTHS_IN_YEAR; i++) {
             if (i == adjustmentIndex) {
                 // This month gets the adjustment
-                allocations.add(MonthlyAllocation.adjusted(months[i], adjustedAmount));
+                allocations.add(new MonthlyAllocation(months[i], adjustedAmount, true));
             } else {
                 // Standard month
-                allocations.add(MonthlyAllocation.standard(months[i], baseAmount));
+                allocations.add(new MonthlyAllocation(months[i], baseAmount, false));
             }
         }
         
@@ -1077,7 +1069,10 @@ Add these tests to `AllocationCalculatorTest.java`:
     @Test
     void shouldHandleVerySmallAmounts() {
         // Given: A very small amount
-        RevenueRecognitionRequest request = RevenueRecognitionRequest.of(dollars(0.05));
+        RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+            dollars(0.05),
+            RoundingPlacement.LAST
+        );
         
         // When: We calculate
         RevenueAllocation allocation = calculator.calculate(request);
@@ -1102,7 +1097,10 @@ Add these tests to `AllocationCalculatorTest.java`:
     @Test
     void shouldHandleZeroAmount() {
         // Given: Zero amount
-        RevenueRecognitionRequest request = RevenueRecognitionRequest.of(dollars(0));
+        RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+            dollars(0),
+            RoundingPlacement.LAST
+        );
         
         // When: We calculate
         RevenueAllocation allocation = calculator.calculate(request);
@@ -1129,7 +1127,10 @@ Add these tests to `AllocationCalculatorTest.java`:
     @Test
     void shouldHandleAmountsWithManyCents() {
         // Given: An amount with cents
-        RevenueRecognitionRequest request = RevenueRecognitionRequest.of(dollars(1234.56));
+        RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+            dollars(1234.56),
+            RoundingPlacement.LAST
+        );
         
         // When: We calculate
         RevenueAllocation allocation = calculator.calculate(request);
@@ -1155,7 +1156,7 @@ Add these tests to `AllocationCalculatorTest.java`:
     void shouldRejectNegativeAmount() {
         // When/Then: Negative amount throws exception
         assertThatThrownBy(() -> 
-            RevenueRecognitionRequest.of(dollars(-100))
+            new RevenueRecognitionRequest(dollars(-100), RoundingPlacement.LAST)
         )
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("cannot be negative");
@@ -1566,6 +1567,11 @@ public record RequestDto(
      * - Clear translation between layers
      * - One place to change mapping if needed
      * - Makes the conversion testable
+     * 
+     * NAMING CONSISTENCY:
+     * Both RequestDto and RevenueRecognitionRequest use "amount" (not "annualAmount").
+     * This makes the conversion simple and clear. The context (revenue recognition
+     * for annual allocation) makes it obvious this is the annual amount.
      * 
      * This is where HTTP concerns end and domain begins.
      */
@@ -2120,6 +2126,68 @@ Current UI just shows JSON blob. Let's make it user-friendly:
   </body>
 </html>
 ```
+
+---
+
+## 🔄 Optional Refactoring (If Time Permits)
+
+### 💬 What to Say
+
+> "Now that the core functionality works, I can refactor to improve readability. I notice we're creating MonthlyAllocation objects with boolean flags that aren't immediately clear. Let me add factory methods to express intent better."
+
+### Optional: Add Factory Methods to MonthlyAllocation
+
+**If you see value in making the code more expressive:**
+
+```java
+public record MonthlyAllocation(
+    Month recognitionPeriod,
+    MonetaryAmount recognizedAmount,
+    boolean hasRoundingAdjustment
+) {
+    // ... existing validation and periodName() ...
+    
+    /**
+     * Factory method for standard allocation (without adjustment)
+     * Improves readability over: new MonthlyAllocation(month, amount, false)
+     */
+    public static MonthlyAllocation standard(Month period, MonetaryAmount amount) {
+        return new MonthlyAllocation(period, amount, false);
+    }
+    
+    /**
+     * Factory method for adjusted allocation
+     * Improves readability over: new MonthlyAllocation(month, amount, true)
+     */
+    public static MonthlyAllocation adjusted(Month period, MonetaryAmount amount) {
+        return new MonthlyAllocation(period, amount, true);
+    }
+}
+```
+
+**Then update AllocationCalculator:**
+
+```java
+// Before:
+allocations.add(new MonthlyAllocation(months[i], adjustedAmount, true));
+allocations.add(new MonthlyAllocation(months[i], baseAmount, false));
+
+// After (more expressive):
+allocations.add(MonthlyAllocation.adjusted(months[i], adjustedAmount));
+allocations.add(MonthlyAllocation.standard(months[i], baseAmount));
+```
+
+**Benefits to discuss:**
+- More readable: "adjusted" vs "true"
+- Self-documenting code
+- Easier to understand intent
+- Standard factory method pattern
+
+**When to add this:**
+- ✅ If interviewer values expressiveness
+- ✅ If you have extra time
+- ✅ As part of refactoring discussion
+- ❌ Not critical for core functionality
 
 ---
 

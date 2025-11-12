@@ -506,7 +506,7 @@ This is a **real accounting problem**. Companies like SaaS businesses need this 
 ## 🚀 Ready?
 
 Now that you understand the problem, check out:
-- **[IMPLEMENTATION_GUIDE.md](OLD_IMPLEMENTATION_GUIDE.md)** for step-by-step code
+- **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** for step-by-step code
 - **[ARCHITECTURE_AND_DDD_GUIDE.md](ARCHITECTURE_AND_DDD_GUIDE.md)** for how to structure it properly
 
 The guides will walk you through building exactly what's described here! 🎉
