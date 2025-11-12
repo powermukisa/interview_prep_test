@@ -1345,7 +1345,114 @@ public class AllocateAmountUseCase implements AllocateAmount {
 
 ---
 
-### Step 4.3: Domain Configuration
+### Step 4.3: Application Layer Test (Optional but Recommended)
+
+#### 🎯 Reasoning
+
+**Should we test the application layer?**
+
+**YES, for these reasons:**
+- Verifies Spring wiring works correctly
+- Documents integration between layers
+- Shows thoroughness
+- Quick to write (just wiring test, not complex logic)
+
+**But it's a DIFFERENT kind of test:**
+- Not testing business logic (that's in domain tests)
+- Testing that layers connect properly
+- Integration test, not unit test
+
+#### 💬 What to Say
+
+> "Now I'll add a quick integration test for the application service. This isn't testing business logic - we already tested that in the domain layer. This verifies that Spring wiring works and the layers connect properly. It's a lightweight integration test."
+
+#### 📝 Code
+
+**File:** Create `src/test/java/com/rillet/codingchallenge/accounting/application/AllocateAmountUseCaseTest.java`
+
+```java
+package com.rillet.codingchallenge.accounting.application;
+
+import com.rillet.codingchallenge.accounting.domain.RevenueAllocation;
+import com.rillet.codingchallenge.accounting.domain.RevenueRecognitionRequest;
+import com.rillet.codingchallenge.accounting.domain.RoundingPlacement;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import static com.rillet.codingchallenge.accounting.Helpers.dollars;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Integration tests for application service.
+ * 
+ * WHY THIS TEST:
+ * - Verifies Spring wiring works
+ * - Tests integration between layers
+ * - NOT testing business logic (domain layer does that)
+ * - Just verifying the layers connect properly
+ * 
+ * DIFFERENCE FROM DOMAIN TESTS:
+ * - Uses @SpringBootTest (needs Spring context)
+ * - Tests through the port interface
+ * - Verifies actual beans are wired correctly
+ */
+@SpringBootTest
+class AllocateAmountUseCaseTest {
+    
+    @Autowired
+    private AllocateAmount allocateAmount;  // Inject through PORT interface
+    
+    /**
+     * Simple integration test - verifies layers connect.
+     * Business logic is tested in AllocationCalculatorTest.
+     */
+    @Test
+    void shouldAllocateRevenueCorrectly() {
+        // Given
+        RevenueRecognitionRequest request = new RevenueRecognitionRequest(
+            dollars(1200),
+            RoundingPlacement.LAST
+        );
+        
+        // When: Call through port interface
+        RevenueAllocation allocation = allocateAmount.execute(request);
+        
+        // Then: Basic verification (detailed testing is in domain layer)
+        assertThat(allocation.monthlyAllocations()).hasSize(12);
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(1200));
+    }
+}
+```
+
+#### ✅ Run Test
+
+```bash
+./gradlew test --tests AllocateAmountUseCaseTest
+```
+
+**Expected:** Test passes, verifying Spring wiring works! ✅
+
+#### 🎯 TDD Discussion
+
+**Is this Red-Green-Refactor?**
+
+Not quite - this is an **integration test**, not a TDD cycle:
+- **Domain layer**: Heavy TDD (Red-Green-Refactor for business logic)
+- **Application layer**: Light integration tests (verify wiring)
+- **Infrastructure layer**: Contract tests (verify HTTP/JSON)
+
+**Why different?**
+- Application layer has minimal logic (just delegation)
+- TDD is most valuable where there's complex logic
+- Integration tests verify components work together
+
+**What to say if asked:**
+> "I'm following TDD heavily in the domain layer where the business logic lives. For the application layer, since it's just thin orchestration with no business logic, I'm writing a lightweight integration test to verify Spring wiring. The real value of TDD is in the domain tests where we're testing algorithms and business rules."
+
+---
+
+### Step 4.4: Domain Configuration
 
 #### 🎯 Reasoning
 
@@ -1571,7 +1678,6 @@ import com.rillet.codingchallenge.accounting.domain.RevenueAllocation;
 
 import javax.money.MonetaryAmount;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * ADAPTER DTO: HTTP response structure for revenue allocation.
@@ -1584,38 +1690,28 @@ import java.util.stream.Collectors;
  * - Users want transparency (see how calculation was done)
  * - Makes API self-documenting
  * 
+ * START SIMPLE:
+ * We use MonthlyAllocation directly instead of creating a separate DTO.
+ * MonthlyAllocation is already simple (Month + MonetaryAmount) and both
+ * serialize to JSON perfectly. No need for extra mapping!
+ * 
  * JSON FORMAT:
  * {
  *   "allocations": [
- *     {"month": "JANUARY", "amount": {...}, "hasRemainder": false},
+ *     {"month": "JANUARY", "amount": {"value": 83.33, "currency": "USD"}},
  *     ...
  *   ],
- *   "baseMonthlyAmount": {...},
- *   "remainder": {...},
- *   "total": {...}
+ *   "baseMonthlyAmount": {"value": 83.33, "currency": "USD"},
+ *   "remainder": {"value": 0.04, "currency": "USD"},
+ *   "total": {"value": 1000, "currency": "USD"}
  * }
  */
 public record ResponseDto(
-    List<MonthlyAmountDto> allocations,
+    List<MonthlyAllocation> allocations,
     MonetaryAmount baseMonthlyAmount,
     MonetaryAmount remainder,
     MonetaryAmount total
 ) {
-    /**
-     * Nested DTO for individual month allocation.
-     * 
-     * WHY NESTED:
-     * - Keeps related structures together
-     * - Clear namespace
-     * - Only used in response context
-     * 
-     * START SIMPLE: Just month and amount. No flags or extra metadata yet.
-     */
-    public record MonthlyAmountDto(
-        String month,
-        MonetaryAmount amount
-    ) {}
-
     /**
      * Converts domain aggregate to infrastructure DTO.
      * 
@@ -1625,23 +1721,13 @@ public record ResponseDto(
      * - Easy to test
      * - Follows adapter pattern
      * 
-     * TRANSLATION:
-     * - Domain MonthlyAllocation → DTO MonthlyAmountDto
-     * - Month enum → String (simpler for JSON)
-     * - All monetary amounts pass through (MoneyModule handles JSON)
+     * START SIMPLE:
+     * No mapping needed! MonthlyAllocation is already perfect for JSON.
+     * Jackson handles Month enum and MonetaryAmount automatically.
      */
     public static ResponseDto fromDomain(RevenueAllocation allocation) {
-        // Convert list of domain objects to list of DTOs
-        List<MonthlyAmountDto> dtoAllocations = allocation.monthlyAllocations().stream()
-            .map(ma -> new MonthlyAmountDto(
-                ma.month().name(),     // Domain: Month enum → DTO: String
-                ma.amount()            // Pass through MonetaryAmount
-            ))
-            .collect(Collectors.toList());
-        
-        // Build response with summary info
         return new ResponseDto(
-            dtoAllocations,
+            allocation.monthlyAllocations(),    // Pass through directly!
             allocation.baseMonthlyAmount(),
             allocation.roundingAdjustment(),
             allocation.annualAmount()
