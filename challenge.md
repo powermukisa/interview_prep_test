@@ -86,3 +86,28 @@ Candidates are expected to:
 2. **Case 2: Division with Rounding Difference**
     - Total Contract Value: `$1000`
     - Expected Monthly Amounts (with default rounding): `$83.33` for 11 months, `$83.37` for 1 month
+
+Scenario
+
+Input:
+{ //RevenueRecognitionRequest (domain)
+  "amount": {
+    "value" : 1000,
+    "currency" : "USD"
+  },
+  "roundingPlacement" : "FIRST" //enum : RoundingPlacement
+}
+
+Desired output:
+{ //Revenue allocation
+  "annualAmount": {"value" : "1000", "currency" : "USD"},
+  "monthlyAllocations" : [
+    {"month" : "JANUARY", "amount" : {"value" : "83.33", "currency" : "USD"}}, //MonthlyAllocation.java
+    {"month" : "FEBRUARY", "amount" : {"value" : "83.33", "currency" : "USD"}},
+    ...
+    {"month" : "DECEMBER", "amount" : {"value" : "83.37", "currency" : "USD"}}
+  ],
+  "baseMonthlyAmount": {"value" : "83.33", "currency" : "USD"},
+  "roundingAdjustment": {"value" : "0.04", "currency" : "USD"},
+  "placement" : "FIRST"
+}
