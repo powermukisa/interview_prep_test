@@ -423,40 +423,37 @@ import java.util.Objects;
  * 
  * DESIGN DECISIONS:
  * 
- * 0. Naming: annualAmount vs amount
+ * 1. Record type:
+ *    - Immutable by default
+ *    - Less boilerplate than class
+ *    - Still supports package-private constructor
+ *    - Still supports validation
+ * 
+ * 2. Naming: annualAmount vs amount
  *    - We use "annualAmount" here (not just "amount") because this aggregate
  *      contains BOTH the annual total AND monthly amounts
- *    - Being explicit prevents confusion when reading code
- *    - In RevenueRecognitionRequest, we use "amount" because context is clear
- *    - Here, we need to distinguish annual from monthly
+ *    - Being explicit prevents confusion
  * 
- * 1. Package-private constructor:
+ * 3. Package-private constructor:
  *    - Only the domain service (AllocationCalculator) can create this
  *    - Ensures invariants are always maintained
  *    - Prevents invalid aggregates from existing
  * 
- * 2. Immutable after creation:
- *    - Once created, can't be modified
- *    - Thread-safe
- *    - No temporal coupling
- * 
- * 3. Validates sum in constructor:
+ * 4. Validates sum in constructor:
  *    - Fail fast if invariant is violated
  *    - Impossible to have invalid state
  *    - Makes bugs unrepresentable
- * 
- * This is the root of the aggregate - access to monthly allocations goes
- * through this object, not directly to the list.
  */
-public class RevenueAllocation {
-    private final MonetaryAmount annualAmount;
-    private final List<MonthlyAllocation> monthlyAllocations;
-    private final MonetaryAmount baseMonthlyAmount;
-    private final MonetaryAmount roundingAdjustment;
-    private final RoundingPlacement placement;
-    
+record RevenueAllocation(
+    MonetaryAmount annualAmount,
+    List<MonthlyAllocation> monthlyAllocations,
+    MonetaryAmount baseMonthlyAmount,
+    MonetaryAmount roundingAdjustment,
+    RoundingPlacement placement
+) {
     /**
-     * Package-private constructor enforces aggregate creation through domain service.
+     * Compact constructor with validation and defensive copying.
+     * Package-private (no modifier) - only accessible within domain package.
      * 
      * WHY PACKAGE-PRIVATE:
      * This is intentional! We don't want clients creating this directly.
@@ -465,13 +462,7 @@ public class RevenueAllocation {
      * 
      * This is a key DDD pattern - the aggregate root controls its own consistency.
      */
-    RevenueAllocation(
-        MonetaryAmount annualAmount,
-        List<MonthlyAllocation> monthlyAllocations,
-        MonetaryAmount baseMonthlyAmount,
-        MonetaryAmount roundingAdjustment,
-        RoundingPlacement placement
-    ) {
+    RevenueAllocation {
         Objects.requireNonNull(annualAmount, "Annual amount cannot be null");
         Objects.requireNonNull(monthlyAllocations, "Monthly allocations cannot be null");
         
@@ -498,43 +489,20 @@ public class RevenueAllocation {
             );
         }
         
-        this.annualAmount = annualAmount;
-        this.monthlyAllocations = List.copyOf(monthlyAllocations);  // Defensive copy for immutability
-        this.baseMonthlyAmount = baseMonthlyAmount;
-        this.roundingAdjustment = roundingAdjustment;
-        this.placement = placement;
+        // Defensive copy - ensure immutability
+        // List.copyOf creates an unmodifiable list
+        monthlyAllocations = List.copyOf(monthlyAllocations);
     }
     
-    // Read-only access to aggregate internals
+    // Records automatically generate accessors (no "get" prefix):
+    // - annualAmount()           ← Not getAnnualAmount()
+    // - monthlyAllocations()     ← Not getMonthlyAllocations()
+    // - baseMonthlyAmount()      ← Not getBaseMonthlyAmount()
+    // - roundingAdjustment()     ← Not getRoundingAdjustment()
+    // - placement()              ← Not getPlacement()
     
-    public MonetaryAmount getAnnualAmount() {
-        return annualAmount;
-    }
-    
-    /**
-     * Returns unmodifiable list of monthly allocations.
-     * 
-     * WHY UNMODIFIABLE: This aggregate is immutable. Callers can read
-     * the allocations but can't modify them.
-     */
-    public List<MonthlyAllocation> getMonthlyAllocations() {
-        return monthlyAllocations;  // Already unmodifiable from List.copyOf()
-    }
-    
-    public MonetaryAmount getBaseMonthlyAmount() {
-        return baseMonthlyAmount;
-    }
-    
-    public MonetaryAmount getRoundingAdjustment() {
-        return roundingAdjustment;
-    }
-    
-    public RoundingPlacement getPlacement() {
-        return placement;
-    }
-    
-    // NOTE: We could add domain query methods like isPerfectAllocation() later
-    // if we find them useful. Start simple!
+    // This is more concise and follows modern Java conventions!
+    // NOTE: We could add domain query methods later if useful!
 }
 ```
 
@@ -642,22 +610,22 @@ class AllocationCalculatorTest {
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: All 12 months get exactly $100
-        assertThat(allocation.getMonthlyAllocations())
+        assertThat(allocation.monthlyAllocations())
             .hasSize(12)
             .allMatch(monthAlloc -> monthAlloc.amount().isEqualTo(dollars(100)));
         
         // And: Base amount is $100
-        assertThat(allocation.getBaseMonthlyAmount()).isEqualTo(dollars(100));
+        assertThat(allocation.baseMonthlyAmount()).isEqualTo(dollars(100));
         
         // And: No rounding adjustment needed
-        assertThat(allocation.getRoundingAdjustment()).isEqualTo(dollars(0));
+        assertThat(allocation.roundingAdjustment()).isEqualTo(dollars(0));
         
         // And: Total equals original (invariant checked by aggregate)
-        assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1200));
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(1200));
         
         // And: First month is JANUARY, last is DECEMBER
-        assertThat(allocation.getMonthlyAllocations().get(0).month()).isEqualTo(Month.JANUARY);
-        assertThat(allocation.getMonthlyAllocations().get(11).month()).isEqualTo(Month.DECEMBER);
+        assertThat(allocation.monthlyAllocations().get(0).month()).isEqualTo(Month.JANUARY);
+        assertThat(allocation.monthlyAllocations().get(11).month()).isEqualTo(Month.DECEMBER);
     }
 }
 ```
@@ -896,27 +864,27 @@ Add these tests to `AllocationCalculatorTest.java`:
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: We get 12 months
-        assertThat(allocation.getMonthlyAllocations()).hasSize(12);
+        assertThat(allocation.monthlyAllocations()).hasSize(12);
         
         // And: First 11 months have the base amount ($83.33)
         for (int i = 0; i < 11; i++) {
-            MonthlyAllocation monthAlloc = allocation.getMonthlyAllocations().get(i);
+            MonthlyAllocation monthAlloc = allocation.monthlyAllocations().get(i);
             assertThat(monthAlloc.amount()).isEqualTo(dollars(83.33));
         }
         
         // And: Last month (December) has the adjusted amount ($83.37)
-        MonthlyAllocation lastMonth = allocation.getMonthlyAllocations().get(11);
+        MonthlyAllocation lastMonth = allocation.monthlyAllocations().get(11);
         assertThat(lastMonth.amount()).isEqualTo(dollars(83.37));
         assertThat(lastMonth.month()).isEqualTo(Month.DECEMBER);
         
         // And: Base amount is $83.33
-        assertThat(allocation.getBaseMonthlyAmount()).isEqualTo(dollars(83.33));
+        assertThat(allocation.baseMonthlyAmount()).isEqualTo(dollars(83.33));
         
         // And: Rounding adjustment is $0.04
-        assertThat(allocation.getRoundingAdjustment()).isEqualTo(dollars(0.04));
+        assertThat(allocation.roundingAdjustment()).isEqualTo(dollars(0.04));
         
         // And: CRITICAL - Sum equals original (aggregate validates this!)
-        assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1000));
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(1000));
     }
     
     /**
@@ -941,18 +909,18 @@ Add these tests to `AllocationCalculatorTest.java`:
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: First month (January) has the adjusted amount
-        MonthlyAllocation firstMonth = allocation.getMonthlyAllocations().get(0);
+        MonthlyAllocation firstMonth = allocation.monthlyAllocations().get(0);
         assertThat(firstMonth.amount()).isEqualTo(dollars(83.37));
         assertThat(firstMonth.month()).isEqualTo(Month.JANUARY);
         
         // And: Remaining 11 months have base amount
         for (int i = 1; i < 12; i++) {
-            MonthlyAllocation monthAlloc = allocation.getMonthlyAllocations().get(i);
+            MonthlyAllocation monthAlloc = allocation.monthlyAllocations().get(i);
             assertThat(monthAlloc.amount()).isEqualTo(dollars(83.33));
         }
         
         // And: Sum still equals original
-        assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1000));
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(1000));
     }
     
     /**
@@ -976,20 +944,20 @@ Add these tests to `AllocationCalculatorTest.java`:
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: Middle month (June, index 5) has the adjusted amount
-        MonthlyAllocation middleMonth = allocation.getMonthlyAllocations().get(5);
+        MonthlyAllocation middleMonth = allocation.monthlyAllocations().get(5);
         assertThat(middleMonth.amount()).isEqualTo(dollars(83.37));
         assertThat(middleMonth.month()).isEqualTo(Month.JUNE);
         
         // And: Other months have base amount
         for (int i = 0; i < 12; i++) {
             if (i != 5) {
-                MonthlyAllocation monthAlloc = allocation.getMonthlyAllocations().get(i);
+                MonthlyAllocation monthAlloc = allocation.monthlyAllocations().get(i);
                 assertThat(monthAlloc.amount()).isEqualTo(dollars(83.33));
             }
         }
         
         // And: Sum equals original
-        assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1000));
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(1000));
     }
 ```
 
@@ -1034,10 +1002,10 @@ Add these tests to `AllocationCalculatorTest.java`:
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: Sum still equals original (no precision loss)
-        assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(0.05));
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(0.05));
         
         // And: We get 12 allocations (even if most are zero)
-        assertThat(allocation.getMonthlyAllocations()).hasSize(12);
+        assertThat(allocation.monthlyAllocations()).hasSize(12);
     }
     
     /**
@@ -1062,12 +1030,11 @@ Add these tests to `AllocationCalculatorTest.java`:
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: All months are zero
-        assertThat(allocation.getMonthlyAllocations())
-            .allMatch(month -> month.recognizedAmount().isZero());
+        assertThat(allocation.monthlyAllocations())
+            .allMatch(month -> month.amount().isZero());
         
         // And: No rounding adjustment
-        assertThat(allocation.getRoundingAdjustment()).isEqualTo(dollars(0));
-        assertThat(allocation.isPerfectAllocation()).isTrue();
+        assertThat(allocation.roundingAdjustment()).isEqualTo(dollars(0));
     }
     
     /**
@@ -1092,10 +1059,10 @@ Add these tests to `AllocationCalculatorTest.java`:
         RevenueAllocation allocation = calculator.calculate(request);
         
         // Then: Sum equals original exactly (CRITICAL for accounting)
-        assertThat(allocation.getAnnualAmount()).isEqualTo(dollars(1234.56));
+        assertThat(allocation.annualAmount()).isEqualTo(dollars(1234.56));
         
         // And: We have exactly 12 allocations
-        assertThat(allocation.getMonthlyAllocations()).hasSize(12);
+        assertThat(allocation.monthlyAllocations()).hasSize(12);
     }
     
     /**
@@ -1626,7 +1593,7 @@ public record ResponseDto(
      */
     public static ResponseDto fromDomain(RevenueAllocation allocation) {
         // Convert list of domain objects to list of DTOs
-        List<MonthlyAmountDto> dtoAllocations = allocation.getMonthlyAllocations().stream()
+        List<MonthlyAmountDto> dtoAllocations = allocation.monthlyAllocations().stream()
             .map(ma -> new MonthlyAmountDto(
                 ma.month().name(),     // Domain: Month enum → DTO: String
                 ma.amount()            // Pass through MonetaryAmount
@@ -1636,9 +1603,9 @@ public record ResponseDto(
         // Build response with summary info
         return new ResponseDto(
             dtoAllocations,
-            allocation.getBaseMonthlyAmount(),
-            allocation.getRoundingAdjustment(),
-            allocation.getAnnualAmount()
+            allocation.baseMonthlyAmount(),
+            allocation.roundingAdjustment(),
+            allocation.annualAmount()
         );
     }
 }
